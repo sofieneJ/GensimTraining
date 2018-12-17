@@ -1,0 +1,10 @@
+
+*.txt
+*.xml
+*.iml
+*.system
+*.html
+*.sgm
+*.data
+*.csv
+data_set/
