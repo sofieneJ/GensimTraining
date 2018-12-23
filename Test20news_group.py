@@ -1,14 +1,16 @@
 import gensim
-import smart_open
+from cosine_k_means import *
 import numpy as np
+import os
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
+
 
 from sklearn.cluster import KMeans
+from sklearn.cluster import DBSCAN
+from sklearn.cluster import SpectralClustering
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import DBSCAN
 
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import LinearSVC
@@ -69,8 +71,7 @@ def select_features():
 
     y = np.array(tags)
     X = np.delete(X, 0, 0)
-    print(X.shape)
-    print(y.shape)
+
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42)
@@ -84,11 +85,13 @@ def select_features():
     clf = LinearSVC()
     # clf = MLPClassifier()
     clf.fit(X_train, y_train)
-    print('clf score %f' % clf.score(X_test, y_test))
+    print('LinearSVC clf score %f' % clf.score(X_test, y_test))
     model = SelectFromModel(clf, prefit=True)
     print ('X shape ', X.shape)
     X_new = model.transform(X)
     print ('X_new shape ', X_new.shape)
+
+
     return model
 
 # select_features()
@@ -123,31 +126,48 @@ def generate_test_data_set():
         tags.append(1)
     y = np.array(tags)
     X = np.delete(X, 0, 0)
-    print(X.shape)
-    print(y.shape)
+
+
+    np.savetxt("test_data_y.csv", y, delimiter=",")
 
     return X, y
+
+
 
 def cluster_with_kmeans(X):
     kmeans_clusterer =KMeans(n_clusters=2, random_state=0)
     y_pred = kmeans_clusterer.fit_predict(X)
-    print('kmean score %f' % kmeans_clusterer.score(X))
-    plt.plot (y_pred)
-    plt.show()
+    # print('kmean score %f' % kmeans_clusterer.score(X))
+    # plt.plot (y_pred)
+    # plt.show()
+    return y_pred
 
 def cluster_with_dbscan(X):
     db_scan_clusterer = DBSCAN(  metric='cosine')
     y_pred = db_scan_clusterer.fit_predict(X)
-    plt.plot (y_pred)
-    plt.show()
+    return y_pred
 
-X, y = generate_test_data_set()
-feature_selector = select_features()
-X_new = feature_selector.transform(X)
-cluster_with_kmeans(X_new)
+def cluster_with_spectral_custering(X):
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+    spectral_clusterer = SpectralClustering(n_clusters=2)
+    spectral_clusterer.fit(X)
+    y_pred = spectral_clusterer.labels_
+    return y_pred
 
 
+exists = os.path.isfile("test_data_X.csv")
+if exists is False:
+    X, y = generate_test_data_set()
+    feature_selector = select_features()
+    X_new = feature_selector.transform(X)
+    np.savetxt("test_data_X.csv", X_new, delimiter=",")
 
+X, y = load_data()
+classes = cluster_with_kmeans(X)
+evaluate_clustering(classes, y, method='eulidean K-means')
+classes = run_consine_cluster(X)
+evaluate_clustering(classes, y, method='cosine K-means')
 
 def apply_supervised_classfication(X, y):
     X_train, X_test, y_train, y_test = train_test_split(
@@ -179,7 +199,6 @@ def apply_supervised_classfication(X, y):
     clf.fit(X_train, y_train)
     print ('reduced dimension score %f' % clf.score(X_test,y_test))
 
-    cluster_with_kmeans(X)
 
 
 # X, y = generate_test_data_set()
