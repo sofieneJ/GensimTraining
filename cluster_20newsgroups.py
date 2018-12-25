@@ -1,6 +1,8 @@
 import gensim
 from cosine_k_means import *
 import numpy as np
+import matplotlib.pyplot as plt
+from collections import Counter
 import os
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.model_selection import train_test_split
@@ -39,7 +41,8 @@ cats = ['alt.atheism',
  'talk.politics.misc',
  'talk.religion.misc']
 
-
+test_cats = ['rec.autos', 'soc.religion.christian', 'rec.sport.baseball']
+# test_cats = ['rec.autos', 'soc.religion.christian']
 
 def read_corpus(corpus, tokens_only=False):
     # with smart_open.smart_open(fname, encoding="iso-8859-1") as f:
@@ -50,6 +53,17 @@ def read_corpus(corpus, tokens_only=False):
             # For training data, add tags
             yield gensim.models.doc2vec.TaggedDocument(gensim.utils.simple_preprocess(doc), [i])
 
+def load_data():
+    data_X_file = '_'.join(test_cats) + '_X.csv'
+    data_y_file = '_'.join(test_cats) + '_y.csv'
+    X = np.loadtxt(data_X_file,  delimiter=",")
+    y = np.loadtxt(data_y_file, delimiter=",")
+    # index_shuffle = np.arange(0,X.shape[0])
+    # np.random.shuffle(index_shuffle)
+    # X = X[index_shuffle]
+    # y = y[index_shuffle]
+    # print (X.shape)
+    return X, y
 
 def select_features():
     model_path = 'model\\my_doc2vec_20news_model'
@@ -57,8 +71,7 @@ def select_features():
 
     X = np.zeros(shape=(1,50))
     tags = []
-    two_catgories = ['rec.autos', 'soc.religion.christian']
-    for index, category in enumerate(two_catgories):
+    for index, category in enumerate(test_cats):
         newsgroup = fetch_20newsgroups(subset='train',
                                              remove=('headers', 'footers', 'quotes'),
                                              categories=[category])
@@ -89,53 +102,48 @@ def select_features():
     model = SelectFromModel(clf, prefit=True)
     print ('X shape ', X.shape)
     X_new = model.transform(X)
-    print ('X_new shape ', X_new.shape)
+    print ('X_new shape after feature selection', X_new.shape)
 
 
     return model
 
-# select_features()
 
 def generate_test_data_set():
-    cat_autos = ['rec.autos']
-    cat_religion = ['soc.religion.christian']
+    test_dataset_list = []
+    for cat in test_cats:
+        doc_corpus = list(read_corpus(fetch_20newsgroups(subset='test',
+                                          remove=('headers', 'footers', 'quotes'),
+                                            categories=[cat])['data'], True))
+        test_dataset_list.append(doc_corpus)
+         # = len(doc_corpus)
 
-    newsgroups1 = fetch_20newsgroups(subset='test',
-                                      remove=('headers', 'footers', 'quotes'),
-                                        categories=cat_religion)
-
-    newsgroups2 = fetch_20newsgroups(subset='test',
-                                      remove=('headers', 'footers', 'quotes'),
-                                        categories=cat_autos)
-
-    list_doc_1= list(read_corpus(newsgroups1['data'], True))
-    list_doc_2 = list(read_corpus(newsgroups2['data'], True))
     model_path = 'model\\my_doc2vec_20news_model'
     model = gensim.models.doc2vec.Doc2Vec.load(model_path)
     X = np.zeros(shape=(1, 50))
     tags = []
-    category_size = min(len(list_doc_1), len(list_doc_2))
-    for k in range(0, category_size):
-        vect = model.infer_vector(list_doc_1[k])
-        X = np.vstack((X, np.array(vect)))
-        tags.append(0)
+    category_sizes = [len(test_dataset_list[k]) for k, _ in enumerate(test_dataset_list)]
+    category_size = min (category_sizes)
+    for i, _ in enumerate(test_cats):
+        for k in range(0, category_size):
+            vect = model.infer_vector(test_dataset_list[i][k])
+            X = np.vstack((X, np.array(vect)))
+            tags.append(i)
 
-    for k in range(0, category_size):
-        vect = model.infer_vector(list_doc_2[k])
-        X = np.vstack((X, np.array(vect)))
-        tags.append(1)
     y = np.array(tags)
     X = np.delete(X, 0, 0)
 
+    print (X.shape)
+    print (y.shape)
 
-    np.savetxt("test_data_y.csv", y, delimiter=",")
+    data_y_file = '_'.join(test_cats) + '_y.csv'
+    np.savetxt(data_y_file, y, delimiter=",")
 
     return X, y
 
 
 
-def cluster_with_kmeans(X):
-    kmeans_clusterer =KMeans(n_clusters=2, random_state=0)
+def cluster_with_kmeans(X, K):
+    kmeans_clusterer =KMeans(n_clusters=K, random_state=0)
     y_pred = kmeans_clusterer.fit_predict(X)
     # print('kmean score %f' % kmeans_clusterer.score(X))
     # plt.plot (y_pred)
@@ -156,18 +164,42 @@ def cluster_with_spectral_custering(X):
     return y_pred
 
 
-exists = os.path.isfile("test_data_X.csv")
-if exists is False:
+def evaluate_clustering(predicted_classes, K, method):
+    class_size = int (len(predicted_classes)/K)
+    guessed_classes = []
+    for i in range (0,K):
+        counter = Counter(predicted_classes[i*class_size:(i+1)*class_size])
+        guessed_classes.append(counter.most_common(1)[0][0])
+
+    error = 0
+    for i in range(0, K):
+        predicted_class = np.array(predicted_classes[i*class_size:(i+1)*class_size])
+        actual_class = guessed_classes[i]*np.ones(class_size)
+        error = error + np.sum(np.absolute(predicted_class-actual_class))
+
+    score = 1 - error/len(predicted_classes)
+    print ('found score for  %s is %f' % (method, score))
+    fig = plt.figure()
+    plt.plot (predicted_classes, '.')
+    plt.title('clustering with %s' %method)
+
+
+data_X_file = '_'.join(test_cats) + '_X.csv'
+exists = os.path.isfile(data_X_file)
+bForceRegenerate = True
+if exists is False or bForceRegenerate is True:
     X, y = generate_test_data_set()
     feature_selector = select_features()
     X_new = feature_selector.transform(X)
-    np.savetxt("test_data_X.csv", X_new, delimiter=",")
+    np.savetxt(data_X_file, X_new, delimiter=",")
 
+plt.close('all')
 X, y = load_data()
-classes = cluster_with_kmeans(X)
-evaluate_clustering(classes, y, method='eulidean K-means')
-classes = run_consine_cluster(X)
-evaluate_clustering(classes, y, method='cosine K-means')
+classes = cluster_with_kmeans(X,K=len(test_cats))
+evaluate_clustering(classes, K=len(test_cats), method='eulidean K-means')
+classes = run_consine_cluster(X,K=len(test_cats) )
+evaluate_clustering(classes, K=len(test_cats), method='cosine K-means')
+plt.show()
 
 def apply_supervised_classfication(X, y):
     X_train, X_test, y_train, y_test = train_test_split(
